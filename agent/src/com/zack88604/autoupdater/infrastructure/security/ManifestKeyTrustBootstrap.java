@@ -63,18 +63,19 @@ public final class ManifestKeyTrustBootstrap {
         TrustedKey trustedKey = loadTrust(gameDirectory);
         if (trustedKey != null) {
             ensureConfiguredTrustMatches(trustedKey, configuredKey, configuredKeyId);
-            return new ManifestSignatureVerifier(trustedKey.publicKey, trustedKey.keyId);
+            String keyId = trustedKey.keyId != null ? trustedKey.keyId : trim(configuredKeyId);
+            return new ManifestSignatureVerifier(trustedKey.publicKey, keyId);
         }
-        if (trim(configuredKey) == null) {
+        String publicKey = trim(configuredKey);
+        if (publicKey == null) {
             return null;
         }
+        // A pinned public key is the trust anchor; mc-update.manifest-key-id is
+        // optional and only narrows the check when an administrator supplies it.
         String keyId = trim(configuredKeyId);
-        if (keyId == null) {
-            throw new IOException("A configured manifest public key requires a key id");
-        }
-        saveTrust(gameDirectory, configuredKey, keyId);
-        clearLegacyTrust(gameDirectory, configuredKey);
-        return new ManifestSignatureVerifier(configuredKey, keyId);
+        saveTrust(gameDirectory, publicKey, keyId);
+        clearLegacyTrust(gameDirectory, publicKey);
+        return new ManifestSignatureVerifier(publicKey, keyId);
     }
 
     private static String fingerprint(String encodedKey) throws IOException {
@@ -130,9 +131,11 @@ public final class ManifestKeyTrustBootstrap {
         }
         String publicKey = trim(values.getProperty("public-key"));
         String keyId = trim(values.getProperty("key-id"));
-        if (publicKey == null || keyId == null) {
+        if (publicKey == null) {
             throw new IOException("Stored manifest key trust is incomplete");
         }
+        // The key id is optional: it is absent when the administrator pinned
+        // only the public key.
         return new TrustedKey(publicKey, keyId);
     }
 
@@ -143,9 +146,11 @@ public final class ManifestKeyTrustBootstrap {
             return;
         }
         String keyId = trim(configuredKeyId);
-        if (!trustedKey.publicKey.equals(publicKey)
-                || (keyId != null && !trustedKey.keyId.equals(keyId))) {
+        if (!trustedKey.publicKey.equals(publicKey)) {
             throw new IOException("Configured manifest key conflicts with local trusted key");
+        }
+        if (keyId != null && trustedKey.keyId != null && !trustedKey.keyId.equals(keyId)) {
+            throw new IOException("Configured manifest key id conflicts with local trusted key");
         }
     }
 
@@ -153,14 +158,16 @@ public final class ManifestKeyTrustBootstrap {
             throws IOException {
         TrustedKey existing = loadTrust(gameDirectory);
         if (existing != null) {
-            if (!existing.publicKey.equals(publicKey) || !existing.keyId.equals(keyId)) {
+            if (!existing.publicKey.equals(publicKey)) {
                 throw new IOException("A manifest public key already exists; refusing to replace it");
             }
             return;
         }
         Properties values = new Properties();
         values.setProperty("public-key", publicKey);
-        values.setProperty("key-id", keyId);
+        if (keyId != null) {
+            values.setProperty("key-id", keyId);
+        }
         File directory = new File(gameDirectory, TRUST_DIRECTORY);
         writeProperties(new File(directory, TRUST_FILE_NAME), values,
                 "Minecraft Update Agent Manifest Key Trust");

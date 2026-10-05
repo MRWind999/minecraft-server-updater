@@ -101,6 +101,9 @@ public final class ServerClient {
             if (index != currentServerIndex) {
                 listener.onLog("Trying server: " + server);
             }
+            // Each mirror restarts the transfer, so progress must not carry the
+            // previous attempt's byte count into the next one.
+            downloadedBytes[0] = 0;
             if (download(server + path, destination, downloadedBytes)) {
                 switchServerIfNeeded(index);
                 return true;

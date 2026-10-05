@@ -47,12 +47,10 @@ public class Launcher {
             File newCore = new File(jarDir, "UpdateAgent_core.jar.new");
             if (newCore.isFile()) {
                 System.out.println("[Launcher] New core JAR found, replacing...");
-                if (coreJar.exists()) {
-                    if (!coreJar.delete()) {
-                        System.out.println("[Launcher] WARNING: Cannot delete old core JAR");
-                    }
-                }
                 try {
+                    // Never delete the current core first: a failed move (for
+                    // example a locked file on Windows) would otherwise leave
+                    // no usable core JAR at all.
                     Files.move(newCore.toPath(), coreJar.toPath(),
                             StandardCopyOption.REPLACE_EXISTING);
                     System.out.println("[Launcher] Core JAR replaced successfully");

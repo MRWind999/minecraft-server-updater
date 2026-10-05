@@ -22,7 +22,20 @@ public final class FileManager {
     private final File gameDirectory;
 
     public FileManager(File gameDirectory) {
-        this.gameDirectory = gameDirectory;
+        // Resolve once so every manifest path and every deletion is compared
+        // against the same root. Using the raw path here while resolving
+        // children canonically produced wrong relative paths (and deleted
+        // files that were listed in the manifest) for symlinked, junctioned,
+        // or "."-containing game directories.
+        this.gameDirectory = canonicalDirectory(gameDirectory);
+    }
+
+    private static File canonicalDirectory(File directory) {
+        try {
+            return directory.getCanonicalFile();
+        } catch (IOException | SecurityException error) {
+            return directory.getAbsoluteFile();
+        }
     }
 
     /** Resolve a manifest path only when it remains inside the managed game directory. */
@@ -40,7 +53,7 @@ public final class FileManager {
             }
         }
         try {
-            File base = gameDirectory.getCanonicalFile();
+            File base = gameDirectory;
             File target = new File(base, path.replace('/', File.separatorChar))
                     .getCanonicalFile();
             return target.toPath().startsWith(base.toPath()) ? target : null;
@@ -192,9 +205,11 @@ public final class FileManager {
                 deleteStaleInDirectory(child, manifestSet, excludedPaths, log,
                         checkpoint, transaction);
             } else if (child.isFile() && !child.getName().startsWith(".")) {
-                String relativePath = child.getAbsolutePath()
-                        .substring(gameDirectory.getAbsolutePath().length() + 1)
-                        .replace('\\', '/');
+                String relativePath = toRelativePath(child);
+                if (relativePath == null) {
+                    log.accept("  [REJECT] " + child.getAbsolutePath() + " (unsafe path)");
+                    continue;
+                }
                 if (isExcluded(relativePath, excludedPaths)) {
                     log.accept("  [SKIP]  " + relativePath + " (excluded)");
                     continue;
@@ -203,6 +218,25 @@ public final class FileManager {
                     deleteStaleFile(child, relativePath, log, transaction);
                 }
             }
+        }
+    }
+
+    /**
+     * Return the manifest-style path of a managed file, or null when it cannot
+     * be expressed relative to the managed game directory.
+     */
+    private String toRelativePath(File file) {
+        try {
+            String relative = gameDirectory.toPath()
+                    .relativize(file.getCanonicalFile().toPath())
+                    .toString()
+                    .replace(File.separatorChar, '/');
+            if (relative.isEmpty() || relative.equals("..") || relative.startsWith("../")) {
+                return null;
+            }
+            return relative;
+        } catch (IOException | IllegalArgumentException error) {
+            return null;
         }
     }
 

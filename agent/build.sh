@@ -11,11 +11,14 @@ SRC_DIR="$SCRIPT_DIR/src"
 BUILD_DIR="$SCRIPT_DIR/build"
 LAUNCHER_JAR="$SCRIPT_DIR/UpdateAgent.jar"
 CORE_JAR="$SCRIPT_DIR/UpdateAgent_core.jar"
+# Pin the target release so the JARs run on the JVM that ships with Minecraft
+# (Java 15+ is required for Ed25519) instead of on whatever JDK built them.
+RELEASE="${JAVA_RELEASE:-15}"
 
-echo "[build] Compiling..."
+echo "[build] Compiling (target Java $RELEASE)..."
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
-find "$SRC_DIR" -type f -name '*.java' -print0 | xargs -0 javac -d "$BUILD_DIR"
+find "$SRC_DIR" -type f -name '*.java' -print0 | xargs -0 javac --release "$RELEASE" -d "$BUILD_DIR"
 
 echo "[build] Packaging launcher JAR..."
 cd "$BUILD_DIR"

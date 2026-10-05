@@ -101,7 +101,7 @@ agent\build.bat
 agent\setup-agent.bat C:\path\to\instance http://your-server:25565 BASE64_X509_ED25519_PUBLIC_KEY
 ```
 
-安装脚本会将服务器配置写入游戏目录下的 `mc-update.properties`，并向启动器 JVM 参数追加 `-javaagent:<path>/UpdateAgent.jar`。
+安装脚本会将服务器配置写入游戏目录下的 `mc-update.properties`，并向启动器 JVM 参数追加 `-javaagent:<path>/UpdateAgent.jar`。脚本要求提供 Base64 X.509 Ed25519 公钥，只写入 `server` 与 `manifest-public-key`；`manifest-key-id` 保持可选。
 
 更新器拥有的运行时文件：
 
@@ -109,6 +109,8 @@ agent\setup-agent.bat C:\path\to\instance http://your-server:25565 BASE64_X509_E
 <game-dir>/
 ├── mc-update.properties                 # 持久化 server/debug/adapter 设置
 └── .mc-update/
+    ├── manifest-key-trust.properties     # 已固定的更新服务器 Ed25519 公钥
+    ├── signed-manifest-cache.properties  # 最近一次完整校验通过的签名清单
     ├── gui-selection.properties          # 可选的已记住 GUI 选择
     ├── gui-server-trust.properties       # 已批准的服务器 URL 与预设身份
     ├── gui-presets/                      # 本地及服务端下载的预设 JAR
@@ -187,8 +189,8 @@ manifest-public-key=BASE64_X509_ED25519_PUBLIC_KEY
 | `mc-update.debug` | `false` | 同步完成后保持窗口打开 |
 | `mc-update.gui-adapter` | *（内建 Swing）* | `GuiAdapterFactory` 的完整类名 |
 | `mc-update.server-gui` | `disabled` | 服务端预设策略：`disabled`、`recommended` 或 `required` |
-| `mc-update.manifest-public-key` | *（必填）* | 管理员固定的 Base64 X.509 Ed25519 公钥 |
-| `mc-update.manifest-key-id` | *（可选）* | 期望的 `ed25519-…` 密钥标识 |
+| `mc-update.manifest-public-key` | *（空）* | 管理员固定的 Base64 X.509 Ed25519 公钥。留空时首次连接会弹窗确认一次并把公钥固定到本地 |
+| `mc-update.manifest-key-id` | *（空）* | 可选的 `ed25519-…` 密钥标识；填写后必须与签名清单一致 |
 
 **推荐方式：`mc-update.properties`**（由安装脚本写入）：
 ```properties
@@ -281,6 +283,26 @@ HTTP 上传代码：
 `excluded_paths` 优先级高于 `managed_paths` — 被排除的文件既不同步也不清理。
 默认值：`managed_paths: ["*"]`，`excluded_paths: []`。
 
+**只有显式列出的 `managed_paths` 才会清理过期文件。** 默认的 `["*"]` 永远不会删除
+任何文件，因为更新器无法区分受管游戏文件与无关文件；需要清理被移除的文件时，请显式
+列出你自己维护的目录（例如 `mods/`）。
+
+## 测试
+
+不需要任何外部测试框架或依赖。
+
+```bash
+# Agent 自检：清单解析、密钥信任、受管文件规则
+bash agent/run-tests.sh           # Windows: agent\run-tests.bat
+
+# 服务端路径限制测试
+python3 -m unittest discover -s server/tests
+```
+
+构建与自检脚本都以 `--release 15` 编译，因此即使由更新的 JDK 构建，产物仍能在
+Minecraft 所用的 Java 版本上运行。可设置 `JAVA_RELEASE`（例如 `JAVA_RELEASE=21`）
+改变目标版本。
+
 ## 项目结构
 
 ```text
@@ -292,11 +314,16 @@ HTTP 上传代码：
 │   ├── app.py                            # Flask API
 │   ├── entrypoint.sh                     # 容器入口
 │   ├── generate_manifest.py              # 清单生成器
-│   └── requirements.txt
+│   ├── manifest_signing.py               # Ed25519 清单签名
+│   ├── path_safety.py                    # /api/files 路径限制
+│   ├── requirements.txt
+│   └── tests/                            # 路径限制测试
 └── agent/
     ├── META-INF/MANIFEST.MF              # java-agent 启动器清单
     ├── build.sh / build.bat              # 构建两个 JAR
+    ├── run-tests.sh / run-tests.bat      # 构建并运行自检
     ├── setup-agent.sh / setup-agent.bat  # 写入游戏目录配置
+    ├── test/                             # AgentSelfCheck 自检
     └── src/
         ├── Launcher.java                 # 稳定启动器，不自更新
         ├── UpdateAgent.java              # 兼容性 facade

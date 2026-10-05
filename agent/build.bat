@@ -11,12 +11,15 @@ set "SRC_DIR=%SCRIPT_DIR%src"
 set "BUILD_DIR=%SCRIPT_DIR%build"
 set "LAUNCHER_JAR=%SCRIPT_DIR%UpdateAgent.jar"
 set "CORE_JAR=%SCRIPT_DIR%UpdateAgent_core.jar"
+REM Pin the target release so the JARs run on the JVM that ships with Minecraft
+REM (Java 15+ is required for Ed25519) instead of on whatever JDK built them.
+if "%JAVA_RELEASE%"=="" (set "RELEASE=15") else (set "RELEASE=%JAVA_RELEASE%")
 
-echo [build] Compiling...
+echo [build] Compiling (target Java %RELEASE%)...
 if exist "%BUILD_DIR%" rmdir /s /q "%BUILD_DIR%"
 mkdir "%BUILD_DIR%"
 dir /s /b "%SRC_DIR%\*.java" > "%BUILD_DIR%\sources.txt"
-javac -d "%BUILD_DIR%" @"%BUILD_DIR%\sources.txt"
+javac --release %RELEASE% -d "%BUILD_DIR%" @"%BUILD_DIR%\sources.txt"
 if %ERRORLEVEL% neq 0 (
     echo [build] Compilation failed!
     exit /b 1

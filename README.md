@@ -101,7 +101,7 @@ agent\build.bat
 agent\setup-agent.bat C:\path\to\instance http://your-server:25565 BASE64_X509_ED25519_PUBLIC_KEY
 ```
 
-The setup script writes server configuration to `mc-update.properties` in the game directory and appends `-javaagent:<path>/UpdateAgent.jar` to the launcher's JVM arguments.
+The setup script writes server configuration to `mc-update.properties` in the game directory and appends `-javaagent:<path>/UpdateAgent.jar` to the launcher's JVM arguments. It requires the Base64 X.509 Ed25519 public key and writes `server` and `manifest-public-key`; `manifest-key-id` stays optional.
 
 Runtime files owned by the updater:
 
@@ -109,6 +109,8 @@ Runtime files owned by the updater:
 <game-dir>/
 ├── mc-update.properties                 # persistent server/debug/adapter settings
 └── .mc-update/
+    ├── manifest-key-trust.properties     # pinned Ed25519 key(s) of the update server
+    ├── signed-manifest-cache.properties  # last fully verified signed manifest
     ├── gui-selection.properties          # optional remembered GUI choice
     ├── gui-server-trust.properties       # approved server URL + preset identity
     ├── gui-presets/                      # local and server-downloaded preset JARs
@@ -188,8 +190,8 @@ Configuration is resolved in this order (normal mode):
 | `mc-update.debug` | `false` | Keep GUI open after sync |
 | `mc-update.gui-adapter` | *(built-in Swing)* | Fully qualified `GuiAdapterFactory` class |
 | `mc-update.server-gui` | `disabled` | `disabled`, `recommended`, or `required` server-preset policy |
-| `mc-update.manifest-public-key` | *(required)* | Base64 X.509 Ed25519 public key pinned by the administrator |
-| `mc-update.manifest-key-id` | *(optional)* | Expected `ed25519-…` key identifier |
+| `mc-update.manifest-public-key` | *(empty)* | Base64 X.509 Ed25519 public key pinned by the administrator. When empty, the first connection asks once for confirmation and pins the key locally |
+| `mc-update.manifest-key-id` | *(empty)* | Optional expected `ed25519-…` key identifier; when set it must match the signed manifest |
 
 **Recommended: `mc-update.properties`** (written by setup script):
 ```properties
@@ -290,6 +292,27 @@ Place this file in the mounted server data root (for the example above,
 `excluded_paths` override `managed_paths` — excluded files are neither synced nor
 cleaned up. Defaults: `managed_paths: ["*"]`, `excluded_paths: []`.
 
+**Stale-file cleanup only happens for explicitly listed `managed_paths`.** The
+default `["*"]` never deletes anything, because the updater cannot distinguish
+managed game files from unrelated ones; list the directories you own (for
+example `mods/`) when removed files should be cleaned up.
+
+## Testing
+
+No external test framework or dependency is required.
+
+```bash
+# Agent self-check: manifest parsing, key trust, managed-file rules
+bash agent/run-tests.sh           # Windows: agent\run-tests.bat
+
+# Server path-confinement tests
+python3 -m unittest discover -s server/tests
+```
+
+Both the build and test scripts compile with `--release 15`, so a JAR built on
+a newer JDK still runs on the Java version Minecraft ships. Set `JAVA_RELEASE`
+(for example `JAVA_RELEASE=21`) to change the target.
+
 ## Project Structure
 
 ```text
@@ -301,11 +324,16 @@ cleaned up. Defaults: `managed_paths: ["*"]`, `excluded_paths: []`.
 │   ├── app.py                            # Flask API
 │   ├── entrypoint.sh                     # container entrypoint
 │   ├── generate_manifest.py              # manifest generator
-│   └── requirements.txt
+│   ├── manifest_signing.py               # Ed25519 manifest signing
+│   ├── path_safety.py                    # /api/files path confinement
+│   ├── requirements.txt
+│   └── tests/                            # path-confinement tests
 └── agent/
     ├── META-INF/MANIFEST.MF              # java-agent launcher manifest
     ├── build.sh / build.bat              # builds the two JARs
+    ├── run-tests.sh / run-tests.bat      # builds and runs the self-check
     ├── setup-agent.sh / setup-agent.bat  # writes game-directory setup
+    ├── test/                             # AgentSelfCheck self-check
     └── src/
         ├── Launcher.java                 # stable launcher, never self-updated
         ├── UpdateAgent.java              # compatibility facade

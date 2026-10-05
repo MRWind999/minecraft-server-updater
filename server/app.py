@@ -19,6 +19,7 @@ from urllib.parse import quote
 
 from flask import Flask, jsonify, send_file, abort, request
 from manifest_signing import public_key_descriptor, sign_manifest
+from path_safety import resolve_download_path
 
 # Configuration
 DATA_DIR = os.environ.get('DATA_DIR', '/data')
@@ -310,11 +311,10 @@ def api_gui_preset_download(filename):
 @app.route('/api/files/<path:filepath>', methods=['GET'])
 def api_download(filepath):
     """Download a single resource file."""
-    safe_path = os.path.normpath(filepath).lstrip('/')
-    full_path = os.path.join(FILES_DIR, safe_path)
-
-    # Prevent path traversal outside FILES_DIR
-    if not os.path.realpath(full_path).startswith(os.path.realpath(FILES_DIR)):
+    # Confine the request to FILES_DIR. A prefix comparison would also accept a
+    # sibling directory such as /data/files-secret for the root /data/files.
+    full_path = resolve_download_path(FILES_DIR, filepath)
+    if full_path is None:
         logger.warning(f"Path traversal attempt: {filepath}")
         abort(403)
 

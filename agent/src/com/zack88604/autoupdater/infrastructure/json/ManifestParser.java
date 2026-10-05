@@ -55,9 +55,25 @@ public final class ManifestParser {
         List<FileEntry> entries = new ArrayList<>();
         int depth = 0;
         int start = -1;
+        boolean quoted = false;
+        boolean escaped = false;
         for (int index = 0; index < filesArray.length(); index++) {
             char character = filesArray.charAt(index);
-            if (character == '{') {
+            if (quoted) {
+                // Braces inside a string value (for example a path containing
+                // "{") must not change the entry boundaries.
+                if (escaped) {
+                    escaped = false;
+                } else if (character == '\\') {
+                    escaped = true;
+                } else if (character == '"') {
+                    quoted = false;
+                }
+                continue;
+            }
+            if (character == '"') {
+                quoted = true;
+            } else if (character == '{') {
                 if (depth == 0) {
                     start = index;
                 }
